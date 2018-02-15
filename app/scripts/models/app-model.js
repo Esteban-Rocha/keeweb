@@ -54,6 +54,7 @@ const AppModel = Backbone.Model.extend({
 
     loadConfig: function(configLocation) {
         return new Promise((resolve, reject) => {
+            this.ensureCanLoadConfig(configLocation);
             this.appLogger.debug('Loading config from', configLocation);
             const ts = this.appLogger.ts();
             const xhr = new XMLHttpRequest();
@@ -91,6 +92,18 @@ const AppModel = Backbone.Model.extend({
         });
     },
 
+    ensureCanLoadConfig(url) {
+        if (!FeatureDetector.isSelfHosted) {
+            throw 'Configs are supported only in self-hosted installations';
+        }
+        const link = document.createElement('a');
+        link.href = url;
+        const isExternal = link.host && link.host !== location.host;
+        if (isExternal) {
+            throw 'Loading config from this location is not allowed';
+        }
+    },
+
     applyUserConfig(config) {
         this.settings.set(config.settings);
         if (config.files) {
@@ -111,7 +124,7 @@ const AppModel = Backbone.Model.extend({
                 .forEach(fi => this.fileInfos.unshift(fi));
         }
         if (config.plugins) {
-            return Promise.all(config.plugins.map(plugin => PluginManager.installIfNew(plugin.url, plugin.manifest)));
+            return Promise.all(config.plugins.map(plugin => PluginManager.installIfNew(plugin.url, plugin.manifest, true)));
         }
     },
 
@@ -487,6 +500,8 @@ const AppModel = Backbone.Model.extend({
                     needLoadKeyFile = true;
                 }
             }
+        } else if (params.keyFilePath && !params.keyFileData && !fileInfo) {
+            needLoadKeyFile = true;
         }
         const file = new FileModel({
             id: fileInfo ? fileInfo.id : IdGenerator.uuid(),
@@ -628,7 +643,9 @@ const AppModel = Backbone.Model.extend({
         if (data && backup && backup.enabled && backup.pending) {
             this.scheduleBackupFile(file, data);
         }
-        this.saveFileFingerprint(file, params.password);
+        if (params) {
+            this.saveFileFingerprint(file, params.password);
+        }
     },
 
     fileClosed: function(file) {

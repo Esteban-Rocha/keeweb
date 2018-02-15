@@ -3,7 +3,7 @@
 This webapp is a browser and desktop password manager compatible with KeePass databases. It doesn't require any server or additional resources.
 The app can run either in browser, or as a desktop app.
 
-![screenshot](https://habrastorage.org/files/ec9/108/3de/ec91083de3e64574a504bc438d038dec.png)
+![screenshot](img/screenshot.png)
 
 # Quick Links
 
@@ -21,7 +21,7 @@ Project roadmap with planned features and approximate schedule is on [TODO](http
 # Self-hosting
 
 Everything you need to host this app on your server is any static file server. The app is a single HTML file + cache manifest (optionally; for offline access).
-You can download the latest distribution files from [gh-pages](https://github.com/keeweb/keeweb/tree/gh-pages) branch.  
+You can download the latest distribution files from [gh-pages](https://github.com/keeweb/keeweb/archive/gh-pages.zip) branch.  
 
 If you are using Docker:
 
@@ -37,7 +37,7 @@ To make Dropbox work in your self-hosted app, [go to this Wiki page](https://git
 
 The app can be built with grunt: `grunt` (html file will be in `dist/`).    
 Desktop apps are built with `grunt desktop`. This works only in mac osx as it builds dmg; requires wine.  
-To run Electron app without building installer, install electron package (`npm install electron -g`), build the app with `grunt` and start in this way:
+To run Electron app without building installer, build the app with `grunt` and start in this way:
 ```bash
 $ grunt dev
 $ npm run-script electron
@@ -64,11 +64,11 @@ Also you can help by [translating KeeWeb](https://keeweb.oneskyapp.com) to your 
 
 KeeWeb is not free to develop. It takes time, requires paid code signing certificates and domains.  
 You can help the project or say "thank you" with this button:  
-[![Donate with PayPal](https://www.paypal.com/en_US/i/btn/btn_donate_LG.gif)](https://www.paypal.me/dvitkovsky)  
+[<img src="img/paypal-donate.png" alt="Donate with PayPal" width="100">](https://www.paypal.me/dvitkovsky)  
 
 Please note: donation does not imply any type of service contract.  
 
 
 # License
 
-[MIT](https://github.com/keeweb/keeweb/blob/master/LICENSE.txt)
+[MIT](https://github.com/keeweb/keeweb/blob/master/LICENSE)

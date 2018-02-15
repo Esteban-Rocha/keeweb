@@ -8,6 +8,8 @@ const KeyHandler = require('./comp/key-handler');
 const IdleTracker = require('./comp/idle-tracker');
 const PopupNotifier = require('./comp/popup-notifier');
 const SingleInstanceChecker = require('./comp/single-instance-checker');
+const AppRightsChecker = require('./comp/app-rights-checker');
+const CookieManager = require('./comp/cookie-manager');
 const Alerts = require('./comp/alerts');
 const Updater = require('./comp/updater');
 const AuthReceiver = require('./comp/auth-receiver');
@@ -23,7 +25,7 @@ const Locale = require('./util/locale');
 const ready = Launcher && Launcher.ready || $;
 
 ready(() => {
-    if (FeatureDetector.isPopup && AuthReceiver.receive()) {
+    if (FeatureDetector.isPopup && AuthReceiver.receive() || FeatureDetector.isFrame) {
         return;
     }
     loadMixins();
@@ -36,7 +38,7 @@ ready(() => {
         .then(loadRemoteConfig)
         .then(ensureCanRun)
         .then(showApp)
-        .then(autoUpdatePlugins)
+        .then(postInit)
         .catch(e => {
             appModel.appLogger.error('Error starting app', e);
         });
@@ -105,31 +107,45 @@ ready(() => {
     }
 
     function showApp() {
-        const skipHttpsWarning = localStorage.skipHttpsWarning || appModel.settings.get('skipHttpsWarning');
-        const protocolIsInsecure = ['https:', 'file:', 'app:'].indexOf(location.protocol) < 0;
-        const hostIsInsecure = location.hostname !== 'localhost';
-        if (protocolIsInsecure && hostIsInsecure && !skipHttpsWarning) {
-            Alerts.error({ header: Locale.appSecWarn, icon: 'user-secret', esc: false, enter: false, click: false,
-                body: Locale.appSecWarnBody1 + '<br/><br/>' + Locale.appSecWarnBody2,
-                buttons: [
-                    { result: '', title: Locale.appSecWarnBtn, error: true }
-                ],
-                complete: showView
-            });
-        } else {
-            showView();
-        }
+        return Promise.resolve().then(() => {
+            const skipHttpsWarning = localStorage.skipHttpsWarning || appModel.settings.get('skipHttpsWarning');
+            const protocolIsInsecure = ['https:', 'file:', 'app:'].indexOf(location.protocol) < 0;
+            const hostIsInsecure = location.hostname !== 'localhost';
+            if (protocolIsInsecure && hostIsInsecure && !skipHttpsWarning) {
+                return new Promise(resolve => {
+                    Alerts.error({
+                        header: Locale.appSecWarn, icon: 'user-secret', esc: false, enter: false, click: false,
+                        body: Locale.appSecWarnBody1 + '<br/><br/>' + Locale.appSecWarnBody2,
+                        buttons: [
+                            {result: '', title: Locale.appSecWarnBtn, error: true}
+                        ],
+                        complete: () => {
+                            showView();
+                            resolve();
+                        }
+                    });
+                });
+            } else {
+                showView();
+            }
+        });
     }
 
-    function autoUpdatePlugins() {
+    function postInit() {
+        Updater.init();
+        SingleInstanceChecker.init();
+        AppRightsChecker.init();
+        CookieManager.init();
         setTimeout(() => PluginManager.runAutoUpdate(), Timeouts.AutoUpdatePluginsAfterStart);
     }
 
     function showView() {
         appModel.prepare();
         new AppView({ model: appModel }).render();
-        Updater.init();
-        SingleInstanceChecker.init();
+        logStartupTime();
+    }
+
+    function logStartupTime() {
         const time = Math.round(performance.now());
         appModel.appLogger.info(`Started in ${time}ms ¯\\_(ツ)_/¯`);
     }

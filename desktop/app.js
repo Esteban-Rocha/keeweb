@@ -11,13 +11,22 @@ let appReady = false;
 let restartPending = false;
 let mainWindowPosition = {};
 let updateMainWindowPositionTimeout = null;
-const windowPositionFileName = path.join(app.getPath('userData'), 'window-position.json');
-const appSettingsFileName = path.join(app.getPath('userData'), 'app-settings.json');
+const userDataDir = app.getPath('userData').replace(/[\\/]temp[\\/]\d+\.\d+[\\/]?$/, '');
+const windowPositionFileName = path.join(userDataDir, 'window-position.json');
+const appSettingsFileName = path.join(userDataDir, 'app-settings.json');
+const tempUserDataPath = path.join(userDataDir, 'temp');
+const tempUserDataPathRand = Date.now().toString() + Math.random().toString();
+const systemNotificationIds = [];
 
 let htmlPath = process.argv.filter(arg => arg.startsWith('--htmlpath=')).map(arg => arg.replace('--htmlpath=', ''))[0];
 if (!htmlPath) {
     htmlPath = 'file://' + path.join(__dirname, 'index.html');
 }
+const showDevToolsOnStart = process.argv.some(arg => arg.startsWith('--devtools'));
+
+app.setPath('userData', path.join(tempUserDataPath, tempUserDataPathRand));
+
+setEnv();
 
 app.on('window-all-closed', () => {
     if (restartPending) {
@@ -29,7 +38,11 @@ app.on('window-all-closed', () => {
         electron.globalShortcut.unregisterAll();
         electron.powerMonitor.removeAllListeners('suspend');
         electron.powerMonitor.removeAllListeners('resume');
-        const userDataAppFile = path.join(app.getPath('userData'), 'app.js');
+        for (const id of systemNotificationIds) {
+            electron.systemPreferences.unsubscribeNotification(id);
+        }
+        systemNotificationIds.length = 0;
+        const userDataAppFile = path.join(userDataDir, 'app.asar/app.js');
         delete require.cache[require.resolve('./app.js')];
         require(userDataAppFile);
         app.emit('ready');
@@ -46,6 +59,7 @@ app.on('ready', () => {
         createMainWindow();
         setGlobalShortcuts();
         subscribePowerEvents();
+        deleteOldTempFiles();
     }
 });
 app.on('open-file', (e, path) => {
@@ -122,13 +136,17 @@ function createMainWindow() {
         width: 1000, height: 700, minWidth: 700, minHeight: 400,
         icon: path.join(__dirname, 'icon.png'),
         titleBarStyle: appSettings ? appSettings.titlebarStyle : undefined,
+        backgroundColor: '#282C34',
         webPreferences: {
             backgroundThrottling: false
         }
     });
     setMenu();
     mainWindow.loadURL(htmlPath);
-    mainWindow.webContents.on('dom-ready', () => {
+    if (showDevToolsOnStart) {
+        mainWindow.openDevTools();
+    }
+    mainWindow.once('ready-to-show', () => {
         setTimeout(() => {
             mainWindow.show();
             ready = true;
@@ -153,21 +171,24 @@ function createMainWindow() {
     mainWindow.on('enter-full-screen', () => {
         emitBackboneEvent('enter-full-screen');
     });
+    mainWindow.on('session-end', () => {
+        emitBackboneEvent('os-lock');
+    });
     restoreMainWindowPosition();
 }
 
 function restoreMainWindow() {
-    destroyAppIcon();
     if (mainWindow.isMinimized()) {
         mainWindow.restore();
     }
     mainWindow.setSkipTaskbar(false);
     mainWindow.focus();
+    setTimeout(destroyAppIcon, 0);
 }
 
 function closeMainWindow() {
-    destroyAppIcon();
     emitBackboneEvent('launcher-exit-request');
+    setTimeout(destroyAppIcon, 0);
 }
 
 function destroyAppIcon() {
@@ -246,7 +267,7 @@ function mainWindowBlur() {
 function emitBackboneEvent(e, arg) {
     if (mainWindow && mainWindow.webContents) {
         arg = JSON.stringify(arg);
-        mainWindow.webContents.executeJavaScript(`Backbone.trigger('${e}', ${arg});`);
+        mainWindow.webContents.executeJavaScript(`Backbone.trigger('${e}', ${arg}); void 0;`);
     }
 }
 
@@ -312,7 +333,7 @@ function onContextMenu(e, props) {
 
 function notifyOpenFile() {
     if (ready && openFile && mainWindow) {
-        openFile = openFile.replace(/"/g, '\\"').replace(/\\/g, '\\\\');
+        openFile = openFile.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
         mainWindow.webContents.executeJavaScript('if (window.launcherOpen) { window.launcherOpen("' + openFile + '"); } ' +
             ' else { window.launcherOpenedFile="' + openFile + '"; }');
         openFile = null;
@@ -345,4 +366,45 @@ function subscribePowerEvents() {
     electron.powerMonitor.on('resume', () => {
         emitBackboneEvent('power-monitor-resume');
     });
+    if (process.platform === 'darwin') {
+        const id = electron.systemPreferences.subscribeNotification('com.apple.screenIsLocked', () => {
+            emitBackboneEvent('os-lock');
+        });
+        systemNotificationIds.push(id);
+    }
+}
+
+function setEnv() {
+    if (process.platform === 'linux' && ['Pantheon', 'Unity:Unity7'].indexOf(process.env.XDG_CURRENT_DESKTOP) !== -1) {
+        // https://github.com/electron/electron/issues/9046
+        process.env.XDG_CURRENT_DESKTOP = 'Unity';
+    }
+}
+
+function deleteOldTempFiles() {
+    if (app.oldTempFilesDeleted) {
+        return;
+    }
+    setTimeout(() => {
+        for (const dir of fs.readdirSync(tempUserDataPath)) {
+            if (dir !== tempUserDataPathRand) {
+                try {
+                    deleteRecursive(path.join(tempUserDataPath, dir));
+                } catch (e) {}
+            }
+        }
+        app.oldTempFilesDeleted = true; // this is added to prevent file deletion on restart
+    }, 1000);
+}
+
+function deleteRecursive(dir) {
+    for (const file of fs.readdirSync(dir)) {
+        const filePath = path.join(dir, file);
+        if (fs.lstatSync(filePath).isDirectory()) {
+            deleteRecursive(filePath);
+        } else {
+            fs.unlinkSync(filePath);
+        }
+    }
+    fs.rmdirSync(dir);
 }

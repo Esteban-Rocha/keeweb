@@ -4,6 +4,7 @@ const AppSettingsModel = require('../models/app-settings-model');
 const RuntimeDataModel = require('../models/runtime-data-model');
 const Links = require('../const/links');
 const FeatureDetector = require('../util/feature-detector');
+const CookieManager = require('../comp/cookie-manager');
 
 const MaxRequestRetries = 3;
 
@@ -35,7 +36,7 @@ _.extend(StorageBase.prototype, {
         this.logger = new Logger('storage-' + this.name);
         if (this._oauthReturnMessage) {
             this.logger.debug('OAuth return message', this._oauthReturnMessage);
-            this._oauthProcessReturn(this._oauthReturnMessage, _.noop);
+            this._oauthProcessReturn(this._oauthReturnMessage);
             delete this._oauthReturnMessage;
             delete sessionStorage.authStorage;
         }
@@ -131,64 +132,76 @@ _.extend(StorageBase.prototype, {
     },
 
     _oauthAuthorize: function(callback) {
-        if (this._oauthToken && !this._oauthToken.expired) {
+        if (this._tokenIsValid(this._oauthToken)) {
             return callback();
         }
         const opts = this._getOAuthConfig();
         const oldToken = this.runtimeData.get(this.name + 'OAuthToken');
-        if (oldToken && !oldToken.expired) {
+        if (this._tokenIsValid(oldToken)) {
             this._oauthToken = oldToken;
-            callback();
-            return;
+            return callback();
         }
         const url = opts.url + '?client_id={cid}&scope={scope}&response_type=token&redirect_uri={url}'
             .replace('{cid}', encodeURIComponent(opts.clientId))
             .replace('{scope}', encodeURIComponent(opts.scope))
             .replace('{url}', encodeURIComponent(this._getOauthRedirectUrl()));
-        this.logger.debug('OAuth popup opened');
+        this.logger.debug('OAuth: popup opened');
         if (!this._openPopup(url, 'OAuth', opts.width, opts.height)) {
-            callback('cannot open popup');
+            return callback('OAuth: cannot open popup');
         }
         const popupClosed = () => {
             Backbone.off('popup-closed', popupClosed);
             window.removeEventListener('message', windowMessage);
             this.logger.error('OAuth error', 'popup closed');
-            callback('popup closed');
+            callback('OAuth: popup closed');
         };
         const windowMessage = e => {
             if (!e.data) {
                 return;
             }
-            Backbone.off('popup-closed', popupClosed);
-            window.removeEventListener('message', windowMessage);
-            this._oauthProcessReturn(e.data, callback);
+            const token = this._oauthProcessReturn(e.data);
+            if (token) {
+                Backbone.off('popup-closed', popupClosed);
+                window.removeEventListener('message', windowMessage);
+                if (token.error) {
+                    this.logger.error('OAuth error', token.error, token.errorDescription);
+                    callback('OAuth: ' + token.error);
+                } else {
+                    callback();
+                }
+            } else {
+                this.logger.debug('Skipped OAuth message', e.data);
+            }
         };
         Backbone.on('popup-closed', popupClosed);
         window.addEventListener('message', windowMessage);
     },
 
-    _oauthProcessReturn: function(message, callback) {
+    _oauthProcessReturn: function(message) {
         const token = this._oauthMsgToToken(message);
-        if (token.error) {
-            this.logger.error('OAuth error', token.error, token.errorDescription);
-            callback(token.error);
-        } else {
+        if (token && !token.error) {
             this._oauthToken = token;
             this.runtimeData.set(this.name + 'OAuthToken', token);
             this.logger.debug('OAuth token received');
-            callback();
+            CookieManager.saveCookies();
         }
+        return token;
     },
 
     _oauthMsgToToken: function(data) {
-        if (data.error || !data.token_type) {
-            return { error: data.error || 'no token', errorDescription: data.error_description };
+        if (!data.token_type) {
+            if (data.error) {
+                return {error: data.error, errorDescription: data.error_description};
+            } else {
+                return undefined;
+            }
         }
         return {
+            dt: Date.now() - 60 * 1000,
             tokenType: data.token_type,
             accessToken: data.access_token,
             authenticationToken: data.authentication_token,
-            expiresIn: data.expires_in,
+            expiresIn: +data.expires_in,
             scope: data.scope,
             userId: data.user_id
         };
@@ -212,6 +225,16 @@ _.extend(StorageBase.prototype, {
             this.runtimeData.unset(this.name + 'OAuthToken');
             this._oauthToken = null;
         }
+    },
+
+    _tokenIsValid(token) {
+        if (!token || token.expired) {
+            return false;
+        }
+        if (token.dt && token.expiresIn && token.dt + token.expiresIn * 1000 < Date.now()) {
+            return false;
+        }
+        return true;
     }
 });
 

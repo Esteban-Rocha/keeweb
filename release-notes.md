@@ -1,5 +1,41 @@
 Release notes
 -------------
+##### v1.6.3 (2017-12-11)
+`-` fixed Windows installer upgrade issue  
+
+##### v1.6.2 (2017-12-09)
+`+` Google Drive shared files support  
+`-` fixed Google Drive authentication issues  
+`-` fixed a color flash on startup  
+
+##### v1.6.1 (2017-12-03)
+`-` fixed white screen on startup  
+`+` `--devtools` command line argument
+
+##### v1.6.0 (2017-12-02)
+`+` desktop apps integrity protection  
+`+` auto-lock on computer lock  
+`+` redesigned Dropbox chooser  
+`+` WebDAV file creation  
+`+` safari tab icons  
+`*` prevent master password autocomplete  
+`*` build with node.js 8  
+`-` fixed tray icon click crash  
+`*` show usernames in entry list  
+`*` password can be hidden as other fields  
+`*` clear clipboard on exit  
+`*` don't remove spaces in custom fields  
+`*` auto-type on subdomains  
+`*` plugin signature validation  
+
+##### v1.5.6 (2017-08-31)
+`-` fix #722: hang on start in desktop  
+`-` fix #653: auto-closing tab when starting from link  
+
+##### v1.5.5 (2017-08-30)
+`-` fix #621, #340: tray icon crash  
+`-` fixed some security issues  
+
 ##### v1.5.4 (2017-06-03)
 `-` fix #649: loading keyfiles with path  
 `-` fix #645: layout issues while switching table view  
